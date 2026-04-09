@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useState } from "react";
+import { useUser, useClerk } from "@clerk/nextjs";
+import { Separator } from "@/components/ui/separator";
 import PopularBooks from "./PopularBooks";
 import SearchSection from "./SearchSection";
 import FavoritesSection from "./FavoritesSection";
+import { useFavorites } from "./useFavorites";
 
 type Book = {
   key: string;
@@ -14,82 +16,66 @@ type Book = {
   year?: number | null;
 };
 
-type Favorite = {
-  id: string;
-  book_key: string;
-  title: string;
-  author: string;
-  cover_id: number | null;
-};
-
 export default function HomePage() {
   const { isSignedIn } = useUser();
-  const [favorites, setFavorites] = useState<Favorite[]>([]);
-  const favoriteKeys = new Set(favorites.map((f) => f.book_key));
+  const { openSignIn } = useClerk();
+  const {
+    favorites,
+    favoriteKeys,
+    toggleFavorite,
+    removeFavorite,
+  } = useFavorites(isSignedIn);
+  const [authPromptShown, setAuthPromptShown] = useState(false);
 
-  const loadFavorites = useCallback(async () => {
-    if (!isSignedIn) return;
-    const res = await fetch("/api/favorites");
-    const data = await res.json();
-    setFavorites(data.favorites ?? []);
-  }, [isSignedIn]);
+  async function handleToggleFavorite(book: Book) {
+    const result = await toggleFavorite(book);
 
-  useEffect(() => {
-    loadFavorites();
-  }, [loadFavorites]);
-
-  async function toggleFavorite(book: Book) {
-    if (!isSignedIn) return;
-
-    if (favoriteKeys.has(book.key)) {
-      await fetch("/api/favorites", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ book_key: book.key }),
-      });
-    } else {
-      await fetch("/api/favorites", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          book_key: book.key,
-          title: book.title,
-          author: book.author,
-          cover_id: book.cover_id,
-        }),
-      });
+    // If anonymous and just favorited (not unfavorited), prompt sign-in once
+    if (result === "needs_auth" && !authPromptShown) {
+      // Check if the book was just added (not removed)
+      const wasFavorited = favoriteKeys.has(book.key);
+      if (!wasFavorited) {
+        setAuthPromptShown(true);
+        // Small delay so the heart animation is visible first
+        setTimeout(() => {
+          openSignIn();
+        }, 600);
+      }
     }
-    await loadFavorites();
-  }
-
-  function removeFavorite(bookKey: string) {
-    toggleFavorite({
-      key: bookKey,
-      title: "",
-      author: "",
-      cover_id: null,
-    });
   }
 
   return (
-    <div className="flex flex-col gap-8 p-4">
+    <>
+      {/* Search is always visible */}
+      <SearchSection
+        favoriteKeys={favoriteKeys}
+        onToggleFavorite={handleToggleFavorite}
+      />
+
+      <Separator className="opacity-30" />
+
       <PopularBooks />
 
-      {isSignedIn && (
+      {(isSignedIn || favorites.length > 0) && (
         <>
-          <SearchSection
-            favoriteKeys={favoriteKeys}
-            onToggleFavorite={toggleFavorite}
-          />
+          <Separator className="opacity-30" />
           <FavoritesSection favorites={favorites} onRemove={removeFavorite} />
         </>
       )}
 
-      {!isSignedIn && (
-        <p className="text-sm text-zinc-500 text-center py-4">
-          Sign in to search and favorite books.
-        </p>
+      {!isSignedIn && favorites.length === 0 && (
+        <>
+          <Separator className="opacity-30" />
+          <div className="py-20 text-center">
+            <h2 className="font-[family-name:var(--font-dm-sans)] font-semibold text-2xl tracking-tight text-foreground mb-2">
+              Start collecting
+            </h2>
+            <p className="text-base text-muted-foreground max-w-sm mx-auto leading-relaxed">
+              Favorite a book above to start building your personal library.
+            </p>
+          </div>
+        </>
       )}
-    </div>
+    </>
   );
 }

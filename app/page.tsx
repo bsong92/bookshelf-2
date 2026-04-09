@@ -1,6 +1,7 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { supabase } from "@/lib/supabase";
 import HomePage from "./components/HomePage";
+import FloatingCovers from "./components/FloatingCovers";
 
 async function syncUser() {
   const { userId } = await auth();
@@ -25,18 +26,24 @@ export default async function Home() {
   await syncUser();
 
   return (
-    <div className="flex flex-col flex-1 bg-zinc-50 dark:bg-black font-sans">
-      <main className="flex-1 w-full max-w-2xl mx-auto bg-white dark:bg-black">
-        <div className="px-4 py-6">
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
-            Bookshelf
+    <div className="max-w-5xl mx-auto px-6">
+      {/* Hero with floating book covers */}
+      <div className="relative pt-24 pb-20 text-center overflow-hidden min-h-[340px]">
+        <FloatingCovers />
+        <div className="relative z-10">
+          <h1 className="font-[family-name:var(--font-instrument-serif)] text-5xl md:text-6xl text-foreground leading-tight">
+            Your library,
+            <br />
+            <span className="text-primary italic">beautifully kept.</span>
           </h1>
-          <p className="text-sm text-zinc-500 mt-1">
-            Discover and favorite books from OpenLibrary
+          <p className="mt-4 text-muted-foreground text-lg max-w-lg mx-auto leading-relaxed">
+            Discover books from the world&apos;s largest open catalog.
+            Save the ones that move you.
           </p>
         </div>
-        <HomePage />
-      </main>
+      </div>
+
+      <HomePage />
     </div>
   );
 }
