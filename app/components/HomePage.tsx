@@ -27,7 +27,15 @@ export default function HomePage() {
     toggleFavorite,
     removeFavorite,
   } = useFavorites(isSignedIn);
-  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [bannerDismissed, setBannerDismissed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("bookshelf_banner_dismissed") === "true";
+  });
+
+  function dismissBanner() {
+    setBannerDismissed(true);
+    localStorage.setItem("bookshelf_banner_dismissed", "true");
+  }
 
   const showAuthBanner =
     !isSignedIn && pendingFavorites.length > 0 && !bannerDismissed;
@@ -56,7 +64,7 @@ export default function HomePage() {
               </Button>
             </SignUpButton>
             <button
-              onClick={() => setBannerDismissed(true)}
+              onClick={dismissBanner}
               className="text-muted-foreground hover:text-foreground p-1 transition-colors"
               aria-label="Dismiss"
             >

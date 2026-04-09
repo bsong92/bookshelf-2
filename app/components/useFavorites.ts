@@ -19,7 +19,33 @@ type Favorite = {
 
 const STORAGE_KEY = "bookshelf_pending_favorites";
 
-function getPendingFavorites(): Book[] {
+function getPendingKeys(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]").map(
+      (b: { key: string }) => b.key
+    );
+  } catch {
+    return [];
+  }
+}
+
+function addPendingKey(book: Book) {
+  const current = getPending();
+  if (!current.some((b) => b.key === book.key)) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([...current, book]));
+  }
+}
+
+function removePendingKey(bookKey: string) {
+  const current = getPending();
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify(current.filter((b) => b.key !== bookKey))
+  );
+}
+
+function getPending(): Book[] {
   if (typeof window === "undefined") return [];
   try {
     return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
@@ -28,12 +54,9 @@ function getPendingFavorites(): Book[] {
   }
 }
 
-function setPendingFavorites(books: Book[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(books));
-}
-
-function clearPendingFavorites() {
+function clearPending() {
   localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem("bookshelf_banner_dismissed");
 }
 
 export function useFavorites(isSignedIn: boolean | undefined) {
@@ -46,10 +69,9 @@ export function useFavorites(isSignedIn: boolean | undefined) {
     ...pendingFavorites.map((f) => f.key),
   ]);
 
-  // Load favorites
   const loadFavorites = useCallback(async () => {
     if (!isSignedIn) {
-      setPending(getPendingFavorites());
+      setPending(getPending());
       return;
     }
     const res = await fetch("/api/favorites");
@@ -61,11 +83,11 @@ export function useFavorites(isSignedIn: boolean | undefined) {
     loadFavorites();
   }, [loadFavorites]);
 
-  // Sync pending favorites to DB after sign-in
+  // Sync pending localStorage favorites to the user's account after sign-in
   useEffect(() => {
     if (!isSignedIn || syncing) return;
 
-    const pending = getPendingFavorites();
+    const pending = getPending();
     if (pending.length === 0) return;
 
     setSyncing(true);
@@ -83,33 +105,28 @@ export function useFavorites(isSignedIn: boolean | undefined) {
           }),
         });
       }
-      clearPendingFavorites();
+      clearPending();
       setPending([]);
       await loadFavorites();
       setSyncing(false);
     })();
   }, [isSignedIn, syncing, loadFavorites]);
 
-  // Toggle favorite — works for both signed-in and anonymous
   async function toggleFavorite(book: Book): Promise<"needs_auth" | "done"> {
+    const alreadyFavorited = favoriteKeys.has(book.key);
+
     if (!isSignedIn) {
-      // Store locally
-      const current = getPendingFavorites();
-      const exists = current.some((b) => b.key === book.key);
-      if (exists) {
-        const updated = current.filter((b) => b.key !== book.key);
-        setPendingFavorites(updated);
-        setPending(updated);
+      // Save to localStorage for tracking
+      if (alreadyFavorited) {
+        removePendingKey(book.key);
       } else {
-        const updated = [...current, book];
-        setPendingFavorites(updated);
-        setPending(updated);
+        addPendingKey(book);
       }
-      return "needs_auth";
+      setPending(getPending());
     }
 
-    // Signed in — hit the API
-    if (favoriteKeys.has(book.key)) {
+    // Always hit the API — anonymous favorites go to DB with null user_id
+    if (alreadyFavorited) {
       await fetch("/api/favorites", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
@@ -127,8 +144,12 @@ export function useFavorites(isSignedIn: boolean | undefined) {
         }),
       });
     }
-    await loadFavorites();
-    return "done";
+
+    if (isSignedIn) {
+      await loadFavorites();
+    }
+
+    return isSignedIn ? "done" : "needs_auth";
   }
 
   function removeFavorite(bookKey: string) {

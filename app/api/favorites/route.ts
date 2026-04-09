@@ -5,10 +5,9 @@ import { NextRequest, NextResponse } from "next/server";
 export async function GET() {
   const { userId } = await auth();
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ favorites: [] });
   }
 
-  // Get Supabase user id from clerk_id
   const { data: user } = await supabase
     .from("users")
     .select("id")
@@ -30,26 +29,27 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const { userId } = await auth();
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   const { book_key, title, author, cover_id } = await req.json();
 
-  const { data: user } = await supabase
-    .from("users")
-    .select("id")
-    .eq("clerk_id", userId)
-    .single();
+  let supabaseUserId: string | null = null;
 
-  if (!user) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  if (userId) {
+    const { data: user } = await supabase
+      .from("users")
+      .select("id")
+      .eq("clerk_id", userId)
+      .single();
+
+    if (user) {
+      supabaseUserId = user.id;
+    }
   }
 
+  // Insert favorite — with user_id if signed in, null if anonymous
   const { data, error } = await supabase
     .from("favorites")
     .insert({
-      user_id: user.id,
+      user_id: supabaseUserId,
       book_key,
       title,
       author,
@@ -70,27 +70,30 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   const { userId } = await auth();
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   const { book_key } = await req.json();
 
-  const { data: user } = await supabase
-    .from("users")
-    .select("id")
-    .eq("clerk_id", userId)
-    .single();
+  if (userId) {
+    const { data: user } = await supabase
+      .from("users")
+      .select("id")
+      .eq("clerk_id", userId)
+      .single();
 
-  if (!user) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
+    if (user) {
+      await supabase
+        .from("favorites")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("book_key", book_key);
+    }
+  } else {
+    // Delete anonymous favorite
+    await supabase
+      .from("favorites")
+      .delete()
+      .is("user_id", null)
+      .eq("book_key", book_key);
   }
-
-  await supabase
-    .from("favorites")
-    .delete()
-    .eq("user_id", user.id)
-    .eq("book_key", book_key);
 
   return NextResponse.json({ success: true });
 }
